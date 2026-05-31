@@ -36,43 +36,39 @@ from ..prosody.predictor import ProsodyPredictor, ProsodyTarget
 
 logger = logging.getLogger(__name__)
 
-# Edge TTS — each emotion has a distinct voice + strong rate + strong pitch shift.
-# Rate and pitch are deliberately large so the emotion is CLEARLY audible.
-# Tested: pitch in Hz and rate in % both produce perceptibly different audio
-# without inflating duration (unlike SSML express-as/prosody keyword values).
-# Format: (voice_name, rate, pitch)
-# Edge TTS — normal speed for all emotions. Emotion is expressed through
-# voice CHARACTER (different voices) + pitch only. No speed changes.
-# Format: (voice_name, rate, pitch)
+# Format: (voice, rate, pitch)
+# rate  : negative % = slower. Microsoft default (+0%) feels fast; -8% to -18% is natural human pace.
+# pitch : small Hz shifts (±10–15 Hz) add emotion colour without sounding unnatural.
+# Voice character is the primary emotion carrier — each emotion maps to a distinctly different voice.
 EDGE_TTS_EMOTION_MAP: Dict[str, tuple] = {
-    "neutral":      ("en-US-ChristopherNeural", "+0%", "+0Hz"),   # calm clear male
-    "happy":        ("en-US-EmmaNeural",        "+0%", "+20Hz"),  # bright female, slightly higher
-    "sad":          ("en-US-MichelleNeural",    "+0%", "-20Hz"),  # warm female, slightly lower
-    "angry":        ("en-US-GuyNeural",         "+0%", "-15Hz"),  # deep male, slightly lower
-    "excited":      ("en-US-EmmaNeural",        "+0%", "+25Hz"),  # bright female, naturally higher
-    "fear":         ("en-US-AriaNeural",        "+0%", "+15Hz"),  # expressive female
-    "surprise":     ("en-US-EmmaNeural",        "+0%", "+15Hz"),  # bright female
-    "calm":         ("en-US-BrianNeural",       "+0%", "-10Hz"),  # warm male, slightly lower
-    "serious":      ("en-US-SteffanNeural",     "+0%", "-15Hz"),  # professional male, lower
-    "motivational": ("en-US-BrianNeural",       "+0%", "+10Hz"),  # warm male, slightly higher
-    "questioning":  ("en-US-AriaNeural",        "+0%", "+10Hz"),  # expressive female
-    "storytelling": ("en-US-MichelleNeural",    "+0%", "+0Hz"),   # warm narrative female
+    "neutral":      ("en-US-ChristopherNeural", "-8%",  "+0Hz"),   # calm clear male
+    "happy":        ("en-US-EmmaNeural",        "-5%",  "+15Hz"),  # bright female, upbeat
+    "sad":          ("en-US-MichelleNeural",    "-18%", "-15Hz"),  # warm female, slow & low
+    "angry":        ("en-US-GuyNeural",         "-5%",  "-10Hz"),  # deep male, terse
+    "excited":      ("en-US-EmmaNeural",        "-5%",  "+15Hz"),  # bright female, energetic
+    "fear":         ("en-US-AriaNeural",        "-5%",  "+10Hz"),  # expressive female, tense
+    "surprise":     ("en-US-EmmaNeural",        "-5%",  "+10Hz"),  # bright female, reactive
+    "calm":         ("en-US-BrianNeural",       "-18%", "-10Hz"),  # warm male, slow & steady
+    "serious":      ("en-US-SteffanNeural",     "-12%", "-10Hz"),  # professional male, measured
+    "motivational": ("en-US-BrianNeural",       "-5%",  "+10Hz"),  # warm male, inspiring
+    "questioning":  ("en-US-AriaNeural",        "-8%",  "+8Hz"),   # expressive female, curious
+    "storytelling": ("en-US-MichelleNeural",    "-15%", "+0Hz"),   # warm female, narrative pace
 }
 
-# Tamil — same approach: natural pitch shifts, voice character carries emotion
+# Tamil — rate+pitch carry emotion; voice character (Valluvar=male, Pallavi=female)
 EDGE_TTS_TAMIL_MAP: Dict[str, tuple] = {
-    "neutral":      ("ta-IN-ValluvarNeural",  "+0%", "+0Hz"),
-    "happy":        ("ta-IN-PallaviNeural",   "+0%", "+20Hz"),
-    "sad":          ("ta-IN-PallaviNeural",   "+0%", "-20Hz"),
-    "angry":        ("ta-IN-ValluvarNeural",  "+0%", "-15Hz"),
-    "excited":      ("ta-IN-PallaviNeural",   "+0%", "+25Hz"),
-    "fear":         ("ta-IN-PallaviNeural",   "+0%", "+15Hz"),
-    "surprise":     ("ta-IN-PallaviNeural",   "+0%", "+15Hz"),
-    "calm":         ("ta-IN-ValluvarNeural",  "+0%", "-10Hz"),
-    "serious":      ("ta-IN-ValluvarNeural",  "+0%", "-15Hz"),
-    "motivational": ("ta-IN-ValluvarNeural",  "+0%", "+10Hz"),
-    "questioning":  ("ta-IN-PallaviNeural",   "+0%", "+10Hz"),
-    "storytelling": ("ta-IN-ValluvarNeural",  "+0%", "+0Hz"),
+    "neutral":      ("ta-IN-ValluvarNeural", "-10%", "+0Hz"),
+    "happy":        ("ta-IN-PallaviNeural",  "-5%",  "+15Hz"),
+    "sad":          ("ta-IN-PallaviNeural",  "-20%", "-15Hz"),
+    "angry":        ("ta-IN-ValluvarNeural", "-8%",  "-10Hz"),
+    "excited":      ("ta-IN-PallaviNeural",  "-5%",  "+15Hz"),
+    "fear":         ("ta-IN-PallaviNeural",  "-8%",  "+10Hz"),
+    "surprise":     ("ta-IN-PallaviNeural",  "-5%",  "+10Hz"),
+    "calm":         ("ta-IN-ValluvarNeural", "-20%", "-10Hz"),
+    "serious":      ("ta-IN-ValluvarNeural", "-12%", "-10Hz"),
+    "motivational": ("ta-IN-ValluvarNeural", "-8%",  "+10Hz"),
+    "questioning":  ("ta-IN-PallaviNeural",  "-10%", "+8Hz"),
+    "storytelling": ("ta-IN-ValluvarNeural", "-15%", "+0Hz"),
 }
 
 # Silero v3_en speakers mapped to emotion styles (en_0–en_7)
@@ -273,7 +269,8 @@ class TTSEngine:
             self._model_name = "Microsoft Neural (edge-tts)"
             logger.info(
                 "Edge TTS ready — Microsoft Neural voices with SSML emotion styles. "
-                "12 emotions → unique voice + style (cheerful, sad, angry, excited, fearful...)."
+                "12 emotions → unique voice + SSML style (cheerful, empathetic, angry, "
+                "excited, terrified, hopeful, narration-professional...)."
             )
             return True
         except Exception as e:
@@ -425,19 +422,20 @@ class TTSEngine:
         self, request: TTSRequest, emotion_result: Optional[EmotionResult] = None
     ) -> Tuple[np.ndarray, int]:
         import edge_tts
+        import concurrent.futures
 
         emotion = (emotion_result.emotion if emotion_result else None) or "neutral"
-        voice, rate, pitch = EDGE_TTS_EMOTION_MAP.get(
-            emotion, ("en-US-ChristopherNeural", "+0%", "+0Hz")
-        )
-
-        # Language-specific voice selection
         lang = request.language or "en"
+
         if lang == "ta":
             voice, rate, pitch = EDGE_TTS_TAMIL_MAP.get(
-                emotion, ("ta-IN-ValluvarNeural", "+0%", "+0Hz")
+                emotion, ("ta-IN-ValluvarNeural", "-10%", "+0Hz")
             )
-        elif lang != "en":
+        elif lang == "en":
+            voice, rate, pitch = EDGE_TTS_EMOTION_MAP.get(
+                emotion, ("en-US-ChristopherNeural", "-8%", "+0Hz")
+            )
+        else:
             voice = {
                 "hi": "hi-IN-MadhurNeural",
                 "fr": "fr-FR-HenriNeural",
@@ -454,24 +452,21 @@ class TTSEngine:
                 "tr": "tr-TR-AhmetNeural",
                 "cs": "cs-CZ-AntoninNeural",
                 "ar": "ar-SA-HamedNeural",
-            }.get(lang, voice)
-            rate, pitch = "+0%", "+0Hz"
+            }.get(lang, "en-US-ChristopherNeural")
+            rate, pitch = "-8%", "+0Hz"
 
         text = request.text.strip()
-        # volume="+50%" gives maximum clean loudness before our own normalization
-        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume="+50%")
 
-        # Collect MP3 audio chunks in a dedicated thread (avoids event loop conflicts)
-        import concurrent.futures
+        def _run() -> list[bytes]:
+            comm = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
 
-        async def _collect() -> list[bytes]:
-            chunks: list[bytes] = []
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    chunks.append(chunk["data"])
-            return chunks
+            async def _collect() -> list[bytes]:
+                chunks: list[bytes] = []
+                async for chunk in comm.stream():
+                    if chunk["type"] == "audio":
+                        chunks.append(chunk["data"])
+                return chunks
 
-        def _run():
             loop = asyncio.new_event_loop()
             try:
                 return loop.run_until_complete(_collect())
@@ -486,7 +481,7 @@ class TTSEngine:
 
         mp3_data = b"".join(mp3_chunks)
 
-        # ffmpeg: MP3 bytes → 24kHz mono WAV via stdin/stdout (no temp files)
+        # ffmpeg: MP3 bytes → 24 kHz mono WAV via stdin/stdout
         result = subprocess.run(
             ["ffmpeg", "-f", "mp3", "-i", "pipe:0",
              "-ar", "24000", "-ac", "1", "-f", "wav", "pipe:1",
